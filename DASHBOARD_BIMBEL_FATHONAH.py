@@ -5,6 +5,14 @@ import sqlite3
 import os
 import io
 from datetime import datetime
+import base64
+
+def get_image_base64(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        return "" # Jika logo tidak ditemukan, biarkan kosong
 
 # Konfigurasi Halaman Dashboard
 st.set_page_config(
@@ -190,17 +198,51 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- INISIALISASI SESSION STATE ADMIN PASSWORD ---
+if "admin_password" not in st.session_state:
+    st.session_state.admin_password = "fathonah123"
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+# --- AUTENTIKASI / LOGIN ADMINISTRATOR ---
+if not st.session_state.logged_in:
+    st.title("🔐 Login Administrator - Bimbel Fathonah")
+    st.markdown("Silakan masukkan username dan password administrator untuk mengakses dashboard.")
+    
+    with st.form("login_form"):
+        username_input = st.text_input("Username")
+        password_input = st.text_input("Password", type="password")
+        submit_login = st.form_submit_button("🚀 Masuk")
+        
+        if submit_login:
+            if username_input == "admin" and password_input == st.session_state.admin_password:
+                st.session_state.logged_in = True
+                st.success("Login berhasil! Memuat dashboard...")
+                st.rerun()
+            else:
+                st.error("Username atau Password salah!")
+    st.stop()
+
 # --- HEADER / JUDUL UTAMA ---
 st.title("📚 Dashboard Bimbingan Belajar Fathonah")
 st.markdown("Panel kontrol utama Bimbel Fathonah. Fitur manajemen tagihan, gaji, dan cetak invoice wali siswa aktif.")
 st.markdown("---")
 
-# --- SIDEBAR NAVIGASI ---
+# --- SIDEBAR NAVIGASI & LOGOUT ---
+st.sidebar.image("assets/logo_fathonah.png", width=150) # Baris untuk logo Anda
 st.sidebar.header("Navigasi Menu")
+
+# Pastikan blok selectbox ini HANYA ADA SATU KALI di dalam file
 menu = st.sidebar.selectbox(
     "Pilih Menu:",
-    ["Ringkasan Utama", "Data Siswa", "Manajemen Siswa (CRUD)", "Data Tentor", "Gaji Bulanan", "Tagihan Wali Siswa"]
+    ["Ringkasan Utama", "Data Siswa", "Manajemen Siswa (CRUD)", "Data Tentor", "Gaji Bulanan", "Tagihan Wali Siswa", "Ubah Password"]
 )
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🚪 Logout (Keluar)"):
+    st.session_state.logged_in = False
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("☁️ Status Google Drive Sync")
@@ -612,6 +654,12 @@ elif menu == "Gaji Bulanan":
                 if not slip_data.empty:
                     row_slip = slip_data.iloc[0]
                     
+                    # Panggil logo (sesuaikan path folder logo Anda)
+                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
+                    
+ # Panggil logo (sesuaikan path folder logo Anda)
+                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
+                    
                     html_slip = f"""
                     <!DOCTYPE html>
                     <html>
@@ -622,8 +670,6 @@ elif menu == "Gaji Bulanan":
                             body, table, div, p, span, th, td {{ font-family: 'Comic Sans MS', 'Comic Sans', cursive, sans-serif !important; }}
                             body {{ color: #333; margin: 0; padding: 20px; }}
                             .slip-container {{ border: 2px solid #2ECC71; padding: 30px; border-radius: 10px; background-color: #FFFFFF; max-width: 700px; margin: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-                            h2 {{ text-align: center; color: #2C3E50; margin-bottom: 5px; }}
-                            p.sub {{ text-align: center; color: #555; margin-top: 0; font-weight: bold; }}
                             table.info {{ width: 100%; font-size: 15px; margin: 20px 0; border-collapse: collapse; color: #333; }}
                             table.info td {{ padding: 6px 0; }}
                             .details-box {{ background: #FAFAFA; padding: 15px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; white-space: pre-line; color: #333; }}
@@ -632,9 +678,20 @@ elif menu == "Gaji Bulanan":
                     </head>
                     <body>
                         <div class="slip-container">
-                            <h2>BIMBINGAN BELAJAR FATHONAH</h2>
-                            <p class="sub">Slip Gaji Tentor</p>
-                            <hr style="border: 1px solid #ddd;">
+                            <!-- HEADER 3 KOLOM AGAR RATA TENGAH SEMPURNA -->
+                            <table style="width: 100%; border-bottom: 2px solid #ddd; margin-bottom: 15px; padding-bottom: 10px;">
+                                <tr>
+                                    <td style="width: 22%; text-align: left; vertical-align: left;">
+                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 110px;">
+                                    </td>
+                                    <td style="width: 64%; text-align: center; vertical-align: middle;">
+                                        <h2 style="margin: 0; color: #2C3E50;">BIMBINGAN BELAJAR FATHONAH</h2>
+                                        <p style="margin: 5px 0 0 0; color: #555; font-weight: bold;">Slip Gaji Tentor</p>
+                                    </td>
+                                    <td style="width: 14%;"></td> <!-- Kolom dummy penyeimbang -->
+                                </tr>
+                            </table>
+                            
                             <table class="info">
                                 <tr>
                                     <td width="35%"><b>Nama Tentor</b></td>
@@ -656,7 +713,8 @@ elif menu == "Gaji Bulanan":
                     </body>
                     </html>
                     """
-                    
+
+
                     st.markdown("---")
                     st.components.v1.html(html_slip, height=550, scrolling=True)
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -737,6 +795,7 @@ elif menu == "Gaji Bulanan":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
+
 
     elif action_gaji == "🗑️ Hapus Gaji":
         if df_tentor_gaji.empty:
@@ -886,6 +945,12 @@ elif menu == "Tagihan Wali Siswa":
                         </div>
                         """
 
+                   # Panggil logo (sesuaikan path folder logo Anda)
+                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
+                    
+# Panggil logo (sesuaikan path folder logo Anda)
+                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
+                    
                     html_invoice = f"""
                     <!DOCTYPE html>
                     <html>
@@ -896,8 +961,6 @@ elif menu == "Tagihan Wali Siswa":
                             body, table, div, p, span, th, td {{ font-family: 'Comic Sans MS', 'Comic Sans', cursive, sans-serif !important; }}
                             body {{ color: #333; margin: 0; padding: 20px; }}
                             .invoice-container {{ border: 1px solid #ddd; padding: 30px; border-radius: 8px; background-color: #FFFFFF; max-width: 800px; margin: auto; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }}
-                            .header-table {{ width: 100%; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 20px; text-align: center; }}
-                            .header-table td {{ vertical-align: middle; text-align: center; }}
                             .title-box {{ text-align: center; font-size: 20px; font-weight: bold; background: #fff; margin: 20px 0; letter-spacing: 1px; text-decoration: underline; color: #000; }}
                             .info-table {{ width: 100%; font-size: 15px; margin-bottom: 20px; color: #000; }}
                             .info-table td {{ padding: 4px 0; }}
@@ -912,9 +975,13 @@ elif menu == "Tagihan Wali Siswa":
                     </head>
                     <body>
                         <div class="invoice-container">
-                            <table class="header-table">
+                            <!-- HEADER 3 KOLOM AGAR RATA TENGAH SEMPURNA -->
+                            <table style="width: 100%; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
                                 <tr>
-                                    <td>
+                                    <td style="width: 18%; text-align: left; vertical-align: middle;">
+                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 150px;">
+                                    </td>
+                                    <td style="width: 64%; text-align: center; vertical-align: middle;">
                                         <b style="font-size: 20px; color: #000;">BIMBINGAN BELAJAR FATHONAH</b><br>
                                         <span style="font-size: 13px; color: #333; line-height: 1.5;">
                                             Kantor Pemasaran : Gedongkiwo Mantrijeron, Yogyakarta<br>
@@ -923,6 +990,7 @@ elif menu == "Tagihan Wali Siswa":
                                             Email : bimbelfathonah.yk@gmail.com
                                         </span>
                                     </td>
+                                    <td style="width: 18%;"></td> <!-- Kolom dummy penyeimbang -->
                                 </tr>
                             </table>
                             
@@ -972,8 +1040,7 @@ elif menu == "Tagihan Wali Siswa":
                         </div>
                     </body>
                     </html>
-                    """
-                    
+                    """                    
                     st.markdown("---")
                     st.components.v1.html(html_invoice, height=750, scrolling=True)
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -1079,6 +1146,27 @@ elif menu == "Tagihan Wali Siswa":
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
+
+elif menu == "Ubah Password":
+    st.subheader("🔑 Ubah Password Administrator")
+    st.markdown("Gunakan form di bawah ini untuk mengganti password akun administrator.")
+    
+    with st.form("form_ubah_password"):
+        old_pass = st.text_input("Password Lama", type="password")
+        new_pass = st.text_input("Password Baru", type="password")
+        confirm_pass = st.text_input("Konfirmasi Password Baru", type="password")
+        
+        submit_pass = st.form_submit_button("💾 Simpan Password Baru")
+        if submit_pass:
+            if old_pass != st.session_state.admin_password:
+                st.error("Password lama salah!")
+            elif not new_pass.strip():
+                st.warning("Password baru tidak boleh kosong!")
+            elif new_pass != confirm_pass:
+                st.error("Konfirmasi password baru tidak cocok!")
+            else:
+                st.session_state.admin_password = new_pass
+                st.success("Password administrator berhasil diubah! Silakan gunakan password baru untuk login selanjutnya.")
 
 # --- FOOTER ---
 st.markdown("---")
