@@ -4,15 +4,8 @@ import plotly.express as px
 import sqlite3
 import os
 import io
-from datetime import datetime
 import base64
-
-def get_image_base64(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except Exception as e:
-        return "" # Jika logo tidak ditemukan, biarkan kosong
+from datetime import datetime
 
 # Konfigurasi Halaman Dashboard
 st.set_page_config(
@@ -20,6 +13,14 @@ st.set_page_config(
     page_icon="📚",
     layout="wide"
 )
+
+# Fungsi untuk load gambar base64
+def get_image_base64(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        return ""
 
 # --- SETUP DATABASE SQLITE & MIGRASI AMAN ---
 DB_FILE = "bimbel_fathonah.db"
@@ -224,16 +225,10 @@ if not st.session_state.logged_in:
                 st.error("Username atau Password salah!")
     st.stop()
 
-# --- HEADER / JUDUL UTAMA ---
-st.title("📚 Dashboard Bimbingan Belajar Fathonah")
-st.markdown("Panel kontrol utama Bimbel Fathonah. Fitur manajemen tagihan, gaji, dan cetak invoice wali siswa aktif.")
-st.markdown("---")
-
 # --- SIDEBAR NAVIGASI & LOGOUT ---
-st.sidebar.image("assets/logo_fathonah.png", width=150) # Baris untuk logo Anda
+st.sidebar.image("assets/logo_fathonah.png", width=250)
 st.sidebar.header("Navigasi Menu")
 
-# Pastikan blok selectbox ini HANYA ADA SATU KALI di dalam file
 menu = st.sidebar.selectbox(
     "Pilih Menu:",
     ["Ringkasan Utama", "Data Siswa", "Manajemen Siswa (CRUD)", "Data Tentor", "Gaji Bulanan", "Tagihan Wali Siswa", "Ubah Password"]
@@ -244,25 +239,47 @@ if st.sidebar.button("🚪 Logout (Keluar)"):
     st.session_state.logged_in = False
     st.rerun()
 
+# --- FITUR EXPORT / IMPORT DATABASE (DI SIDEBAR) ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("☁️ Status Google Drive Sync")
-st.sidebar.success("Status: Terhubung (Auto-Backup Siap)")
+st.sidebar.subheader("💾 Export / Import Database")
 
+# 1. Export Database
 if os.path.exists(DB_FILE):
     with open(DB_FILE, "rb") as f:
         st.sidebar.download_button(
-            label="☁️ Download Database Terbaru",
+            label="📤 Download Database (Backup)",
             data=f,
             file_name="bimbel_fathonah.db",
             mime="application/octet-stream",
-            help="Simpan file ini langsung ke folder Google Drive Anda untuk cadangan online."
+            help="Simpan file database ini ke perangkat Anda sebagai cadangan (backup)."
         )
+
+# 2. Import Database
+st.sidebar.markdown("**Import (Restore) Database:**")
+uploaded_db = st.sidebar.file_uploader("Upload file .db (Backup)", type=["db"], key="import_db")
+
+if uploaded_db is not None:
+    st.sidebar.warning("⚠️ PERHATIAN: Import database akan menghapus dan menimpa seluruh data yang ada saat ini!")
+    if st.sidebar.button("🚀 Konfirmasi Import Database"):
+        try:
+            # Menulis dan menimpa (overwrite) file database lama
+            with open(DB_FILE, "wb") as f:
+                f.write(uploaded_db.getbuffer())
+            st.sidebar.success("✅ Database berhasil di-import! Memuat ulang...")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Gagal mengimport database: {e}")
 
 # Ambil data terbaru dari database
 df_siswa = load_data_siswa()
 df_tentor_profil = load_data_tentor_profil()
 df_tentor_gaji = load_data_tentor_gaji()
 df_tagihan = load_data_tagihan()
+
+# --- HEADER / JUDUL UTAMA ---
+st.title("📚 Dashboard Bimbingan Belajar Fathonah")
+st.markdown("Panel kontrol utama Bimbel Fathonah. Fitur manajemen tagihan, gaji, dan cetak invoice wali siswa aktif.")
+st.markdown("---")
 
 # --- KONTEN BERDASARKAN MENU ---
 
@@ -309,7 +326,7 @@ elif menu == "Data Siswa":
 
 elif menu == "Manajemen Siswa (CRUD)":
     st.subheader("⚙️ Manajemen Data Siswa")
-    action = st.radio("Pilih Aksi:", ["➕ Tambah Siswa", "✏️ Update Data Siswa", "🗑️ Hapus Siswa"], horizontal=True)
+    action = st.radio("Pilih Aksi:", ["➕ Tambah Siswa", "✏️ Update Data Siswa", "🗑️ Hapus Siswa", "📥 Import / Export Siswa"], horizontal=True)
     st.markdown("---")
     
     if action == "➕ Tambah Siswa":
@@ -401,13 +418,64 @@ elif menu == "Manajemen Siswa (CRUD)":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
+                    
+    elif action == "📥 Import / Export Siswa":
+        col_ex, col_im = st.columns(2)
+        with col_ex:
+            st.markdown("### 📤 Export Data")
+            st.markdown("Download seluruh data siswa ke format Excel.")
+            excel_siswa = convert_df_to_excel(df_siswa, "Data Siswa")
+            st.download_button("📥 Download Data Siswa (Excel)", data=excel_siswa, file_name="Data_Siswa.xlsx", type="primary")
+            
+        with col_im:
+            st.markdown("### 📥 Import Data")
+            st.markdown("Upload file Excel untuk menambahkan banyak siswa sekaligus.")
+            df_template = pd.DataFrame(columns=["ID Siswa", "Nama Siswa", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"])
+            excel_template = convert_df_to_excel(df_template, "Template")
+            st.download_button("📄 Download Template Excel", data=excel_template, file_name="Template_Siswa.xlsx")
+            
+            file_siswa = st.file_uploader("Upload File Excel (.xlsx)", type=['xlsx'], key="upload_siswa")
+            if file_siswa is not None:
+                try:
+                    df_in = pd.read_excel(file_siswa)
+                    df_in = df_in.fillna("")
+                    st.dataframe(df_in.head(3))
+                    
+                    if st.button("🚀 Proses Import", type="primary"):
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        success_count = 0
+                        for index, row in df_in.iterrows():
+                            id_s = str(row.iloc[0])
+                            nama = str(row.iloc[1])
+                            jenjang = str(row.iloc[2])
+                            paket = str(row.iloc[3])
+                            alamat = str(row.iloc[4])
+                            try: fee = int(row.iloc[5])
+                            except: fee = 0
+                            try: fee_t = int(row.iloc[6])
+                            except: fee_t = 0
+                            
+                            try:
+                                cursor.execute('INSERT INTO siswa VALUES (?, ?, ?, ?, ?, ?, ?)', 
+                                               (id_s, nama, jenjang, paket, alamat, fee, fee_t))
+                                success_count += 1
+                            except sqlite3.IntegrityError:
+                                pass # Abaikan jika ID sudah ada
+                        conn.commit()
+                        conn.close()
+                        auto_sync_to_google_drive()
+                        st.success(f"Berhasil mengimport {success_count} data siswa baru!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal memproses file. Pastikan menggunakan template yang benar. (Error: {e})")
 
     st.markdown("---")
     st.dataframe(df_siswa, use_container_width=True)
 
 elif menu == "Data Tentor":
     st.subheader("👨‍🏫 Manajemen Data Tentor (Profil, Alamat, Mapel & Jadwal Hari)")
-    action_t_profil = st.radio("Aksi Data Tentor:", ["📋 Lihat Daftar Tentor", "➕ Tambah Tentor", "✏️ Update Tentor", "🗑️ Hapus Tentor"], horizontal=True)
+    action_t_profil = st.radio("Aksi Data Tentor:", ["📋 Lihat Daftar Tentor", "➕ Tambah Tentor", "✏️ Update Tentor", "🗑️ Hapus Tentor", "📥 Import / Export Tentor"], horizontal=True)
     st.markdown("---")
     
     if action_t_profil == "📋 Lihat Daftar Tentor":
@@ -531,6 +599,52 @@ elif menu == "Data Tentor":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
+                    
+    elif action_t_profil == "📥 Import / Export Tentor":
+        col_ext, col_imt = st.columns(2)
+        with col_ext:
+            st.markdown("### 📤 Export Data Tentor")
+            st.markdown("Download seluruh profil tentor ke format Excel.")
+            excel_tentor = convert_df_to_excel(df_tentor_profil, "Data Tentor")
+            st.download_button("📥 Download Data Tentor (Excel)", data=excel_tentor, file_name="Data_Tentor.xlsx", type="primary")
+            
+        with col_imt:
+            st.markdown("### 📥 Import Data Tentor")
+            st.markdown("Upload file Excel untuk menambahkan tentor baru.")
+            df_template_t = pd.DataFrame(columns=["Nama Tentor", "Alamat", "Jenis Mapel", "Hari On Bimbel"])
+            excel_template_t = convert_df_to_excel(df_template_t, "Template")
+            st.download_button("📄 Download Template Excel", data=excel_template_t, file_name="Template_Tentor.xlsx")
+            
+            file_tentor = st.file_uploader("Upload File Excel (.xlsx)", type=['xlsx'], key="upload_tentor")
+            if file_tentor is not None:
+                try:
+                    df_in_t = pd.read_excel(file_tentor)
+                    df_in_t = df_in_t.fillna("")
+                    st.dataframe(df_in_t.head(3))
+                    
+                    if st.button("🚀 Proses Import", type="primary"):
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        success_count = 0
+                        for index, row in df_in_t.iterrows():
+                            nama = str(row.iloc[0])
+                            alamat = str(row.iloc[1])
+                            mapel = str(row.iloc[2])
+                            hari = str(row.iloc[3])
+                            
+                            try:
+                                cursor.execute('INSERT INTO tentor_profil (nama_tentor, alamat, jenis_mapel, hari_on_bimbel) VALUES (?, ?, ?, ?)', 
+                                               (nama, alamat, mapel, hari))
+                                success_count += 1
+                            except Exception as e:
+                                pass # Skip error baris ini
+                        conn.commit()
+                        conn.close()
+                        auto_sync_to_google_drive()
+                        st.success(f"Berhasil mengimport {success_count} data tentor baru!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal memproses file. Pastikan menggunakan template yang benar. (Error: {e})")
 
 elif menu == "Gaji Bulanan":
     st.subheader("💰 Manajemen Gaji Bulanan Tentor & Slip Gaji")
@@ -653,11 +767,6 @@ elif menu == "Gaji Bulanan":
                 slip_data = df_tentor_gaji[(df_tentor_gaji["Nama Tentor"] == pilih_tentor_slip) & (df_tentor_gaji["Bulan"] == pilih_bulan_slip)]
                 if not slip_data.empty:
                     row_slip = slip_data.iloc[0]
-                    
-                    # Panggil logo (sesuaikan path folder logo Anda)
-                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
-                    
- # Panggil logo (sesuaikan path folder logo Anda)
                     logo_base64 = get_image_base64("assets/logo_fathonah.png")
                     
                     html_slip = f"""
@@ -678,17 +787,16 @@ elif menu == "Gaji Bulanan":
                     </head>
                     <body>
                         <div class="slip-container">
-                            <!-- HEADER 3 KOLOM AGAR RATA TENGAH SEMPURNA -->
                             <table style="width: 100%; border-bottom: 2px solid #ddd; margin-bottom: 15px; padding-bottom: 10px;">
                                 <tr>
-                                    <td style="width: 22%; text-align: left; vertical-align: left;">
-                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 110px;">
+                                    <td style="width: 18%; text-align: left; vertical-align: middle;">
+                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 90px;">
                                     </td>
                                     <td style="width: 64%; text-align: center; vertical-align: middle;">
                                         <h2 style="margin: 0; color: #2C3E50;">BIMBINGAN BELAJAR FATHONAH</h2>
                                         <p style="margin: 5px 0 0 0; color: #555; font-weight: bold;">Slip Gaji Tentor</p>
                                     </td>
-                                    <td style="width: 14%;"></td> <!-- Kolom dummy penyeimbang -->
+                                    <td style="width: 18%;"></td>
                                 </tr>
                             </table>
                             
@@ -713,8 +821,7 @@ elif menu == "Gaji Bulanan":
                     </body>
                     </html>
                     """
-
-
+                    
                     st.markdown("---")
                     st.components.v1.html(html_slip, height=550, scrolling=True)
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -795,7 +902,6 @@ elif menu == "Gaji Bulanan":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
-
 
     elif action_gaji == "🗑️ Hapus Gaji":
         if df_tentor_gaji.empty:
@@ -929,6 +1035,7 @@ elif menu == "Tagihan Wali Siswa":
                 inv_data = df_tagihan[(df_tagihan["Nama Siswa"] == pilih_siswa_inv) & (df_tagihan["Bulan"] == pilih_bulan_inv)]
                 if not inv_data.empty:
                     row_inv = inv_data.iloc[0]
+                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
                     
                     s_row = df_siswa[df_siswa["Nama Siswa"] == pilih_siswa_inv]
                     alamat_siswa = s_row["Alamat"].values[0] if not s_row.empty and s_row["Alamat"].values[0] else "Alamat belum diatur di Data Siswa"
@@ -945,12 +1052,6 @@ elif menu == "Tagihan Wali Siswa":
                         </div>
                         """
 
-                   # Panggil logo (sesuaikan path folder logo Anda)
-                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
-                    
-# Panggil logo (sesuaikan path folder logo Anda)
-                    logo_base64 = get_image_base64("assets/logo_fathonah.png")
-                    
                     html_invoice = f"""
                     <!DOCTYPE html>
                     <html>
@@ -975,11 +1076,10 @@ elif menu == "Tagihan Wali Siswa":
                     </head>
                     <body>
                         <div class="invoice-container">
-                            <!-- HEADER 3 KOLOM AGAR RATA TENGAH SEMPURNA -->
                             <table style="width: 100%; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
                                 <tr>
                                     <td style="width: 18%; text-align: left; vertical-align: middle;">
-                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 150px;">
+                                        <img src="data:image/png;base64,{logo_base64}" alt="Logo" style="max-width: 100px;">
                                     </td>
                                     <td style="width: 64%; text-align: center; vertical-align: middle;">
                                         <b style="font-size: 20px; color: #000;">BIMBINGAN BELAJAR FATHONAH</b><br>
@@ -990,7 +1090,7 @@ elif menu == "Tagihan Wali Siswa":
                                             Email : bimbelfathonah.yk@gmail.com
                                         </span>
                                     </td>
-                                    <td style="width: 18%;"></td> <!-- Kolom dummy penyeimbang -->
+                                    <td style="width: 18%;"></td>
                                 </tr>
                             </table>
                             
@@ -1040,7 +1140,8 @@ elif menu == "Tagihan Wali Siswa":
                         </div>
                     </body>
                     </html>
-                    """                    
+                    """
+                    
                     st.markdown("---")
                     st.components.v1.html(html_invoice, height=750, scrolling=True)
                     st.markdown("<br>", unsafe_allow_html=True)
