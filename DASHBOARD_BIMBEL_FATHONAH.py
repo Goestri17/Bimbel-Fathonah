@@ -34,6 +34,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS siswa (
             id_siswa TEXT PRIMARY KEY,
             nama_siswa TEXT NOT NULL,
+            wali_murid TEXT,
             jenjang TEXT NOT NULL,
             paket_belajar TEXT,
             alamat TEXT,
@@ -42,10 +43,13 @@ def init_db():
         )
     ''')
     
+    # Migrasi Kolom Siswa (Untuk database versi lama)
     cursor.execute("PRAGMA table_info(siswa)")
     siswa_cols = [col[1] for col in cursor.fetchall()]
     if "fee_tentor" not in siswa_cols:
         cursor.execute("ALTER TABLE siswa ADD COLUMN fee_tentor INTEGER DEFAULT 0")
+    if "wali_murid" not in siswa_cols:
+        cursor.execute("ALTER TABLE siswa ADD COLUMN wali_murid TEXT DEFAULT '-'")
 
     # 2. Tabel Tentor (Profil Dasar Tentor)
     cursor.execute('''
@@ -89,6 +93,7 @@ def init_db():
         )
     ''')
     
+    # Migrasi Kolom Keuangan
     cursor.execute("PRAGMA table_info(keuangan)")
     columns = [col[1] for col in cursor.fetchall()]
     if "pendaftaran" not in columns:
@@ -112,9 +117,9 @@ def load_data_siswa():
     df = pd.read_sql_query("SELECT * FROM siswa", conn)
     conn.close()
     if not df.empty:
-        df.columns = ["ID Siswa", "Nama Siswa", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"]
+        df.columns = ["ID Siswa", "Nama Siswa", "Wali Murid", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"]
     else:
-        df = pd.DataFrame(columns=["ID Siswa", "Nama Siswa", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"])
+        df = pd.DataFrame(columns=["ID Siswa", "Nama Siswa", "Wali Murid", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"])
     return df
 
 def load_data_tentor_profil():
@@ -226,7 +231,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- SIDEBAR NAVIGASI & LOGOUT ---
-st.sidebar.image("assets/logo_fathonah.png", width=250)
+st.sidebar.image("assets/logo_fathonah.png", width=150)
 st.sidebar.header("Navigasi Menu")
 
 menu = st.sidebar.selectbox(
@@ -262,7 +267,6 @@ if uploaded_db is not None:
     st.sidebar.warning("⚠️ PERHATIAN: Import database akan menghapus dan menimpa seluruh data yang ada saat ini!")
     if st.sidebar.button("🚀 Konfirmasi Import Database"):
         try:
-            # Menulis dan menimpa (overwrite) file database lama
             with open(DB_FILE, "wb") as f:
                 f.write(uploaded_db.getbuffer())
             st.sidebar.success("✅ Database berhasil di-import! Memuat ulang...")
@@ -336,6 +340,7 @@ elif menu == "Manajemen Siswa (CRUD)":
             with col1:
                 new_id = st.text_input("ID Siswa", value=default_id)
                 new_nama = st.text_input("Nama Lengkap Siswa")
+                new_wali = st.text_input("Nama Wali Murid")
                 new_jenjang = st.selectbox("Jenjang Pendidikan", LIST_JENJANG)
                 new_paket = st.text_input("Paket Belajar")
             with col2:
@@ -353,8 +358,8 @@ elif menu == "Manajemen Siswa (CRUD)":
                     try:
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
-                        cursor.execute('INSERT INTO siswa VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                                       (new_id, new_nama, new_jenjang, new_paket, new_alamat, new_fee, new_fee_tentor))
+                        cursor.execute('INSERT INTO siswa VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+                                       (new_id, new_nama, new_wali, new_jenjang, new_paket, new_alamat, new_fee, new_fee_tentor))
                         conn.commit()
                         conn.close()
                         auto_sync_to_google_drive()
@@ -376,12 +381,26 @@ elif menu == "Manajemen Siswa (CRUD)":
                 default_idx = 0
             
             with st.form("form_update_siswa"):
+                # Konversi aman untuk memastikan nilainya selalu angka
+                try:
+                    val_fee = int(current_data["Fee per Pertemuan (Rp)"])
+                except (ValueError, TypeError):
+                    val_fee = 0
+                    
+                try:
+                    val_fee_tentor = int(current_data["Fee Tentor (Rp)"])
+                except (ValueError, TypeError):
+                    val_fee_tentor = 0
+
                 up_nama = st.text_input("Nama Lengkap Siswa", value=current_data["Nama Siswa"])
+                up_wali = st.text_input("Nama Wali Murid", value=str(current_data["Wali Murid"]))
                 up_jenjang = st.selectbox("Jenjang Pendidikan", LIST_JENJANG, index=default_idx)
                 up_paket = st.text_input("Paket Belajar", value=current_data["Paket Belajar"])
                 up_alamat = st.text_input("Alamat Siswa", value=current_data["Alamat"])
-                up_fee = st.number_input("Fee per Pertemuan (Rp)", min_value=0, step=10000, value=int(current_data["Fee per Pertemuan (Rp)"]))
-                up_fee_tentor = st.number_input("Fee Tentor per Pertemuan (Rp)", min_value=0, step=10000, value=int(current_data["Fee Tentor (Rp)"]))
+                
+                # Gunakan variabel val_fee dan val_fee_tentor di sini
+                up_fee = st.number_input("Fee per Pertemuan (Rp)", min_value=0, step=10000, value=val_fee)
+                up_fee_tentor = st.number_input("Fee Tentor per Pertemuan (Rp)", min_value=0, step=10000, value=val_fee_tentor)
                 
                 submit_up_siswa = st.form_submit_button("💾 Simpan Perubahan")
                 if submit_up_siswa:
@@ -389,9 +408,9 @@ elif menu == "Manajemen Siswa (CRUD)":
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
                         cursor.execute('''
-                            UPDATE siswa SET nama_siswa=?, jenjang=?, paket_belajar=?, alamat=?, fee_per_pertemuan=?, fee_tentor=?
+                            UPDATE siswa SET nama_siswa=?, wali_murid=?, jenjang=?, paket_belajar=?, alamat=?, fee_per_pertemuan=?, fee_tentor=?
                             WHERE id_siswa=?
-                        ''', (up_nama, up_jenjang, up_paket, up_alamat, up_fee, up_fee_tentor, id_target))
+                        ''', (up_nama, up_wali, up_jenjang, up_paket, up_alamat, up_fee, up_fee_tentor, id_target))
                         conn.commit()
                         conn.close()
                         auto_sync_to_google_drive()
@@ -430,7 +449,7 @@ elif menu == "Manajemen Siswa (CRUD)":
         with col_im:
             st.markdown("### 📥 Import Data")
             st.markdown("Upload file Excel untuk menambahkan banyak siswa sekaligus.")
-            df_template = pd.DataFrame(columns=["ID Siswa", "Nama Siswa", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"])
+            df_template = pd.DataFrame(columns=["ID Siswa", "Nama Siswa", "Wali Murid", "Jenjang", "Paket Belajar", "Alamat", "Fee per Pertemuan (Rp)", "Fee Tentor (Rp)"])
             excel_template = convert_df_to_excel(df_template, "Template")
             st.download_button("📄 Download Template Excel", data=excel_template, file_name="Template_Siswa.xlsx")
             
@@ -448,17 +467,18 @@ elif menu == "Manajemen Siswa (CRUD)":
                         for index, row in df_in.iterrows():
                             id_s = str(row.iloc[0])
                             nama = str(row.iloc[1])
-                            jenjang = str(row.iloc[2])
-                            paket = str(row.iloc[3])
-                            alamat = str(row.iloc[4])
-                            try: fee = int(row.iloc[5])
+                            wali = str(row.iloc[2])
+                            jenjang = str(row.iloc[3])
+                            paket = str(row.iloc[4])
+                            alamat = str(row.iloc[5])
+                            try: fee = int(row.iloc[6])
                             except: fee = 0
-                            try: fee_t = int(row.iloc[6])
+                            try: fee_t = int(row.iloc[7])
                             except: fee_t = 0
                             
                             try:
-                                cursor.execute('INSERT INTO siswa VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                                               (id_s, nama, jenjang, paket, alamat, fee, fee_t))
+                                cursor.execute('INSERT INTO siswa VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+                                               (id_s, nama, wali, jenjang, paket, alamat, fee, fee_t))
                                 success_count += 1
                             except sqlite3.IntegrityError:
                                 pass # Abaikan jika ID sudah ada
@@ -690,48 +710,56 @@ elif menu == "Gaji Bulanan":
         elif df_siswa.empty:
             st.warning("Data siswa masih kosong. Harap isi menu *Manajemen Siswa (CRUD)* terlebih dahulu.")
         else:
-            with st.form("form_tambah_gaji_tentor"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    list_nama_tentor = df_tentor_profil["Nama Tentor"].tolist()
-                    g_nama_tentor = st.selectbox("Pilih Nama Tentor", list_nama_tentor)
-                    g_bulan = st.selectbox("Bulan & Tahun Gaji", LIST_BULAN_TAHUN)
-                with col2:
-                    st.markdown("### 👥 Pilih Siswa & Atur Pertemuan")
-                
-                daftar_nama_siswa = df_siswa["Nama Siswa"].tolist()
-                g_pilihan_siswa = st.multiselect("Pilih Siswa yang Diajar oleh Tentor Ini:", daftar_nama_siswa)
-                
-                g_pertemuan_inputs = {}
-                if g_pilihan_siswa:
-                    st.markdown("Atur jumlah pertemuan masing-masing siswa:")
-                    cols_s = st.columns(len(g_pilihan_siswa) if len(g_pilihan_siswa) <= 4 else 4)
-                    for i, s_nama in enumerate(g_pilihan_siswa):
-                        with cols_s[i % len(cols_s)]:
-                            g_pertemuan_inputs[s_nama] = st.number_input(f"Pertemuan: {s_nama}", min_value=1, step=1, value=4, key=f"gj_jml_{s_nama}")
-                
-                submit_gaji = st.form_submit_button("💾 Hitung & Simpan Gaji Bulanan")
-                if submit_gaji:
-                    if not g_pilihan_siswa:
-                        st.warning("Harap pilih minimal 1 siswa!")
-                    else:
-                        tot_gaji_hitung = 0
-                        tot_pertemuan_gabung = 0
-                        detail_list = []
-                        for s_nama in g_pilihan_siswa:
-                            fee_t_s = int(df_siswa.loc[df_siswa["Nama Siswa"] == s_nama, "Fee Tentor (Rp)"].values[0])
-                            jml_p = g_pertemuan_inputs[s_nama]
-                            tot_pertemuan_gabung += jml_p
-                            sub = fee_t_s * jml_p
-                            tot_gaji_hitung += sub
-                            detail_list.append(f"• {s_nama}: {jml_p}x (Fee @Rp {fee_t_s:,} = Rp {sub:,})")
+            # st.form DIHAPUS agar UI tampil otomatis/real-time
+            col1, col2 = st.columns(2)
+            with col1:
+                list_nama_tentor = df_tentor_profil["Nama Tentor"].tolist()
+                g_nama_tentor = st.selectbox("Pilih Nama Tentor", list_nama_tentor)
+                g_bulan = st.selectbox("Bulan & Tahun Gaji", LIST_BULAN_TAHUN)
+            with col2:
+                st.markdown("### 👥 Pilih Siswa & Atur Pertemuan")
+            
+            daftar_nama_siswa = df_siswa["Nama Siswa"].unique().tolist()
+            g_pilihan_siswa = st.multiselect("Pilih Siswa yang Diajar oleh Tentor Ini:", daftar_nama_siswa)
+            
+            g_pertemuan_inputs = {}
+            if g_pilihan_siswa:
+                st.markdown("Atur jumlah pertemuan masing-masing siswa:")
+                cols_s = st.columns(len(g_pilihan_siswa) if len(g_pilihan_siswa) <= 4 else 4)
+                for i, s_nama in enumerate(g_pilihan_siswa):
+                    with cols_s[i % len(cols_s)]:
+                        g_pertemuan_inputs[s_nama] = st.number_input(f"Pertemuan: {s_nama}", min_value=1, step=1, value=4, key=f"gj_jml_{s_nama}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_gaji = st.button("💾 Hitung & Simpan Gaji Bulanan", type="primary", use_container_width=True)
+            if submit_gaji:
+                if not g_pilihan_siswa:
+                    st.warning("Harap pilih minimal 1 siswa!")
+                else:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
                         
-                        str_daftar_siswa = ", ".join([f"• {s}" for s in g_pilihan_siswa])
-                        str_detail_p = "; ".join(detail_list)
-                        
-                        try:
-                            conn = sqlite3.connect(DB_FILE)
-                            cursor = conn.cursor()
+                        # CEK DATA GANDA
+                        cursor.execute("SELECT id_gaji FROM tentor_gaji WHERE nama_tentor=? AND bulan=?", (g_nama_tentor, g_bulan))
+                        if cursor.fetchone():
+                            st.error(f"⚠️ Gagal: Gaji untuk tentor **{g_nama_tentor}** bulan **{g_bulan}** sudah pernah diinput! Gunakan menu '✏️ Update Gaji' jika ingin merubah data.")
+                            conn.close()
+                        else:
+                            tot_gaji_hitung = 0
+                            tot_pertemuan_gabung = 0
+                            detail_list = []
+                            for s_nama in g_pilihan_siswa:
+                                fee_t_s = int(df_siswa.loc[df_siswa["Nama Siswa"] == s_nama, "Fee Tentor (Rp)"].values[0])
+                                jml_p = g_pertemuan_inputs[s_nama]
+                                tot_pertemuan_gabung += jml_p
+                                sub = fee_t_s * jml_p
+                                tot_gaji_hitung += sub
+                                detail_list.append(f"• {s_nama}: {jml_p}x (Fee @Rp {fee_t_s:,} = Rp {sub:,})")
+                            
+                            str_daftar_siswa = ", ".join([f"• {s}" for s in g_pilihan_siswa])
+                            str_detail_p = "; ".join(detail_list)
+                            
                             cursor.execute('''
                                 INSERT INTO tentor_gaji (nama_tentor, daftar_siswa, detail_pertemuan, jumlah_pertemuan, bulan, total_gaji)
                                 VALUES (?, ?, ?, ?, ?, ?)
@@ -741,8 +769,8 @@ elif menu == "Gaji Bulanan":
                             auto_sync_to_google_drive()
                             st.success(f"Gaji bulanan tentor **{g_nama_tentor}** bulan **{g_bulan}** sebesar **Rp {tot_gaji_hitung:,.0f}** berhasil disimpan!")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     elif action_gaji == "📄 Tampilkan & Download Slip Gaji":
         st.subheader("📄 Tampilkan & Download Slip Gaji Tentor")
@@ -852,56 +880,62 @@ elif menu == "Gaji Bulanan":
             raw_ds = str(curr_g["Daftar Siswa"])
             ds_lama = [s.replace("• ", "").strip() for s in raw_ds.split(", ")] if raw_ds else []
             
-            with st.form("form_update_gaji_tentor"):
-                list_nama_tentor = df_tentor_profil["Nama Tentor"].tolist() if not df_tentor_profil.empty else [curr_g["Nama Tentor"]]
-                try:
-                    def_t_idx = list_nama_tentor.index(curr_g["Nama Tentor"])
-                except:
-                    def_t_idx = 0
-                    
+            # st.form DIHAPUS agar UI tampil otomatis
+            list_nama_tentor = df_tentor_profil["Nama Tentor"].tolist() if not df_tentor_profil.empty else [curr_g["Nama Tentor"]]
+            try:
+                def_t_idx = list_nama_tentor.index(curr_g["Nama Tentor"])
+            except:
+                def_t_idx = 0
+                
+            col1, col2 = st.columns(2)
+            with col1:
                 up_g_nama = st.selectbox("Nama Tentor", list_nama_tentor, index=def_t_idx)
+            with col2:
                 up_g_bulan = st.selectbox("Bulan & Tahun Gaji", LIST_BULAN_TAHUN, index=def_b_idx)
-                
-                daftar_nama_siswa = df_siswa["Nama Siswa"].tolist()
-                valid_ds = [s for s in ds_lama if s in daftar_nama_siswa]
-                up_g_pilihan_siswa = st.multiselect("Pilih Siswa:", daftar_nama_siswa, default=valid_ds)
-                
-                up_g_pertemuan_inputs = {}
-                if up_g_pilihan_siswa:
-                    st.markdown("Atur jumlah pertemuan:")
-                    for s_nama in up_g_pilihan_siswa:
+            
+            daftar_nama_siswa = df_siswa["Nama Siswa"].unique().tolist()
+            valid_ds = [s for s in ds_lama if s in daftar_nama_siswa]
+            up_g_pilihan_siswa = st.multiselect("Pilih Siswa:", daftar_nama_siswa, default=valid_ds)
+            
+            up_g_pertemuan_inputs = {}
+            if up_g_pilihan_siswa:
+                st.markdown("Atur jumlah pertemuan:")
+                cols_s = st.columns(len(up_g_pilihan_siswa) if len(up_g_pilihan_siswa) <= 4 else 4)
+                for i, s_nama in enumerate(up_g_pilihan_siswa):
+                    with cols_s[i % len(cols_s)]:
                         up_g_pertemuan_inputs[s_nama] = st.number_input(f"Pertemuan: {s_nama}", min_value=1, step=1, value=4, key=f"up_gj_{s_nama}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_up_g = st.button("💾 Simpan Perubahan Gaji", type="primary", use_container_width=True)
+            if submit_up_g:
+                tot_gaji_up = 0
+                tot_pertemuan_up = 0
+                detail_list_up = []
+                for s_nama in up_g_pilihan_siswa:
+                    fee_t_s = int(df_siswa.loc[df_siswa["Nama Siswa"] == s_nama, "Fee Tentor (Rp)"].values[0])
+                    jml_p = up_g_pertemuan_inputs[s_nama]
+                    tot_pertemuan_up += jml_p
+                    sub = fee_t_s * jml_p
+                    tot_gaji_up += sub
+                    detail_list_up.append(f"• {s_nama}: {jml_p}x (Fee @Rp {fee_t_s:,} = Rp {sub:,})")
                 
-                submit_up_g = st.form_submit_button("💾 Simpan Perubahan Gaji")
-                if submit_up_g:
-                    tot_gaji_up = 0
-                    tot_pertemuan_up = 0
-                    detail_list_up = []
-                    for s_nama in up_g_pilihan_siswa:
-                        fee_t_s = int(df_siswa.loc[df_siswa["Nama Siswa"] == s_nama, "Fee Tentor (Rp)"].values[0])
-                        jml_p = up_g_pertemuan_inputs[s_nama]
-                        tot_pertemuan_up += jml_p
-                        sub = fee_t_s * jml_p
-                        tot_gaji_up += sub
-                        detail_list_up.append(f"• {s_nama}: {jml_p}x (Fee @Rp {fee_t_s:,} = Rp {sub:,})")
-                    
-                    str_ds_up = ", ".join([f"• {s}" for s in up_g_pilihan_siswa])
-                    str_detail_up = "; ".join(detail_list_up)
-                    
-                    try:
-                        conn = sqlite3.connect(DB_FILE)
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            UPDATE tentor_gaji SET nama_tentor=?, daftar_siswa=?, detail_pertemuan=?, jumlah_pertemuan=?, bulan=?, total_gaji=?
-                            WHERE id_gaji=?
-                        ''', (up_g_nama, str_ds_up, str_detail_up, tot_pertemuan_up, up_g_bulan, tot_gaji_up, id_g_target))
-                        conn.commit()
-                        conn.close()
-                        auto_sync_to_google_drive()
-                        st.success("Data gaji bulanan berhasil diperbarui!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                str_ds_up = ", ".join([f"• {s}" for s in up_g_pilihan_siswa])
+                str_detail_up = "; ".join(detail_list_up)
+                
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE tentor_gaji SET nama_tentor=?, daftar_siswa=?, detail_pertemuan=?, jumlah_pertemuan=?, bulan=?, total_gaji=?
+                        WHERE id_gaji=?
+                    ''', (up_g_nama, str_ds_up, str_detail_up, tot_pertemuan_up, up_g_bulan, tot_gaji_up, id_g_target))
+                    conn.commit()
+                    conn.close()
+                    auto_sync_to_google_drive()
+                    st.success("Data gaji bulanan berhasil diperbarui!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     elif action_gaji == "🗑️ Hapus Gaji":
         if df_tentor_gaji.empty:
@@ -1039,6 +1073,7 @@ elif menu == "Tagihan Wali Siswa":
                     
                     s_row = df_siswa[df_siswa["Nama Siswa"] == pilih_siswa_inv]
                     alamat_siswa = s_row["Alamat"].values[0] if not s_row.empty and s_row["Alamat"].values[0] else "Alamat belum diatur di Data Siswa"
+                    nama_wali = s_row["Wali Murid"].values[0] if not s_row.empty and s_row["Wali Murid"].values[0] else "Wali Murid"
                     
                     pendaftaran_html = f"<tr><td>2</td><td class='text-left'>Biaya Pendaftaran</td><td>-</td><td>-</td><td>Rp {row_inv['Pendaftaran (Rp)']:,.0f}</td><td class='text-left'>Pendaftaran Baru</td></tr>" if row_inv['Pendaftaran (Rp)'] > 0 else ""
                     diskon_html = f"<tr><td>-</td><td class='text-left'>Diskon Pertemuan ({row_inv['Diskon Pertemuan']}x)</td><td>-</td><td>-</td><td>- Rp {row_inv['Diskon (Rp)']:,.0f}</td><td class='text-left'>Potongan Diskon</td></tr>" if row_inv['Diskon (Rp)'] > 0 else ""
@@ -1098,8 +1133,8 @@ elif menu == "Tagihan Wali Siswa":
                             
                             <table class="info-table">
                                 <tr>
-                                    <td width="15%"><b>Nama Siswa</b></td>
-                                    <td width="85%">: <b>{row_inv['Nama Siswa']}</b></td>
+                                    <td width="20%"><b>Nama Wali Murid</b></td>
+                                    <td width="80%">: <b>{nama_wali}</b></td>
                                 </tr>
                                 <tr>
                                     <td><b>Alamat</b></td>
